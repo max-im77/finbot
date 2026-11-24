@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FinBot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:var(--tg-theme-bg-color,#fff);--fg:var(--tg-theme-text-color,#111);--card:var(--tg-theme-secondary-bg-color,#f3f4f6);--mut:var(--tg-theme-hint-color,#6b7280);--acc:var(--tg-theme-button-color,#2481cc);--grn:#2e9e4f;--red:#e53935}
+@media(prefers-color-scheme:dark){:root{--bg:var(--tg-theme-bg-color,#111827);--fg:var(--tg-theme-text-color,#f3f4f6);--card:var(--tg-theme-secondary-bg-color,#1f2937);--mut:var(--tg-theme-hint-color,#9ca3af)}}
+*{box-sizing:border-box}
+body{margin:0;padding:12px 14px 40px;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,system-ui,sans-serif}
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{flex:1;padding:10px;border:0;border-radius:10px;background:var(--card);color:var(--fg);font:inherit;font-weight:600}
+.tabs button.on{background:var(--acc);color:#fff}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:block;font-size:13px;color:var(--mut)}
+input,select{width:100%;padding:10px;margin-top:3px;border:1px solid transparent;border-radius:10px;background:var(--card);color:var(--fg);font:inherit}
+.full{grid-column:1/-1}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-top:14px}
+.big{font-size:30px;font-weight:700}
+.mut{color:var(--mut);font-size:14px}
+.row{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+.warn{border-left:4px solid var(--red)}
+svg{width:100%;height:auto;display:block;margin-top:8px}
+.hide{display:none}
+</style></head><body>
+<div class="tabs"><button id="t1" class="on">💰 Вклад</button><button id="t2">🏦 Кредит</button></div>
+
+<section id="p1">
+ <div class="grid">
+  <label>Сумма<input id="dP" type="number" inputmode="decimal" value="500000"></label>
+  <label>Ставка, % годовых<input id="dR" type="number" inputmode="decimal" step="0.1" value="10"></label>
+  <label>Срок, мес<input id="dM" type="number" inputmode="numeric" value="12"></label>
+  <label>Капитализация<select id="dC"><option value="monthly">ежемесячная</option><option value="daily">ежедневная</option><option value="quarterly">ежеквартальная</option><option value="yearly">ежегодная</option><option value="end">в конце срока</option></select></label>
+  <label>Снять через, мес<input id="dW" type="number" inputmode="numeric" value="3"></label>
+  <label>Ставка при досрочном, %<input id="dX" type="number" inputmode="decimal" step="0.01" value="0.01"></label>
+ </div>
+ <div id="dOut"></div>
+</section>
+
+<section id="p2" class="hide">
+ <div class="grid">
+  <label>Сумма<input id="lP" type="number" inputmode="decimal" value="500000"></label>
+  <label>Ставка, % годовых<input id="lR" type="number" inputmode="decimal" step="0.1" value="14"></label>
+  <label>Срок, мес<input id="lM" type="number" inputmode="numeric" value="36"></label>
+  <label>Платежи<select id="lK"><option value="a">аннуитетные</option><option value="d">дифференцированные</option></select></label>
+ </div>
+ <div id="lOut"></div>
+</section>
+
+<script>
+const tg=window.Telegram&&Telegram.WebApp;if(tg){tg.ready();tg.expand()}
+const $=id=>document.getElementById(id),fmt=n=>Math.round(n).toLocaleString('ru-RU'),N={daily:365,monthly:12,quarterly:4,yearly:1,end:0};
+const bal=(P,r,m,c)=>{r/=100;const t=m/12,n=N[c];if(!n)return P*(1+r*t);const p=n*t,k=Math.floor(p+1e-9),q=Math.max(p-k,0);return P*Math.pow(1+r/n,k)*(1+r/n*q)};
+const ear=(r,c)=>N[c]?(Math.pow(1+r/100/N[c],N[c])-1)*100:r;
+const row=(a,b,x='')=>`<div class="row"><span class="mut">${a}</span><b ${x}>${b}</b></div>`;
+
+function lineChart(pts,P){const W=320,H=160,max=Math.max(...pts),min=P*0.98,x=i=>10+i/(pts.length-1)*(W-20),y=v=>H-12-(v-min)/(max-min||1)*(H-30);
+ const d=pts.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+ return `<svg viewBox="0 0 ${W} ${H}"><polygon points="${x(0)},${y(P)} ${d} ${x(pts.length-1)},${y(P)}" fill="#2e9e4f" opacity=".25"/><polyline points="${d}" fill="none" stroke="#2e9e4f" stroke-width="3"/><line x1="10" x2="${W-10}" y1="${y(P)}" y2="${y(P)}" stroke="#888" stroke-dasharray="4"/></svg>`}
+
+function dep(){
+ const P=+$('dP').value,r=+$('dR').value,m=Math.round(+$('dM').value),c=$('dC').value,w=Math.round(+$('dW').value),pr=+$('dX').value,o=$('dOut');
+ if(!(P>0&&m>=1&&m<=600&&r>=0)){o.innerHTML='';return}
+ const f=bal(P,r,m,c),s=bal(P,r,m,'end'),pts=[];for(let i=0;i<=m;i++)pts.push(bal(P,r,i,c));
+ let h=`<div class="card"><div class="mut">Итого через ${m} мес</div><div class="big">${fmt(f)}</div>`+
+  row('Доход','+'+fmt(f-P),'style="color:var(--grn)"')+row('Эффективная ставка',ear(r,c).toFixed(2)+'%')+
+  (c!=='end'?row('Капитализация добавила','+'+fmt(f-s)):'')+lineChart(pts,P)+`</div>`;
+ if(w>=1&&w<m){const e=bal(P,pr,w,c),lost=f-e;
+  h+=`<div class="card warn"><b>⚠️ Подводный камень</b><div class="mut">Снимаете через ${w} мес — ставка ${pr}%</div>`+
+   row('Получите',fmt(e))+row('Потеряете','−'+fmt(lost),'style="color:var(--red)"')+row('Доля потерянных процентов',f>P?Math.round(lost/(f-P)*100)+'%':'—')+`</div>`}
+ o.innerHTML=h}
+
+function loan(){
+ const P=+$('lP').value,r=+$('lR').value,m=Math.round(+$('lM').value),k=$('lK').value,o=$('lOut');
+ if(!(P>0&&m>=1&&m<=600&&r>=0)){o.innerHTML='';return}
+ const i=r/1200,rows=[];let b=P;const A=i?P*i/(1-Math.pow(1+i,-m)):P/m;
+ for(let n=1;n<=m;n++){const int=b*i;let body=k==='a'?A-int:P/m;if(n===m)body=b;b-=body;rows.push({body,int,pay:body+int})}
+ const tot=rows.reduce((s,x)=>s+x.pay,0),ti=tot-P,n3=Math.min(3,m),i3=rows.slice(0,n3).reduce((s,x)=>s+x.int,0),p3=rows.slice(0,n3).reduce((s,x)=>s+x.pay,0),
+  i12=rows.slice(0,Math.min(12,m)).reduce((s,x)=>s+x.int,0),mx=rows[0].pay,W=320,H=150,bw=(W-20)/m;
+ const bars=rows.map((x,j)=>{const hb=x.body/mx*(H-20),hi=x.int/mx*(H-20),xx=10+j*bw;return `<rect x="${xx}" y="${H-hb}" width="${Math.max(bw-1,.5)}" height="${hb}" fill="#2481cc"/><rect x="${xx}" y="${H-hb-hi}" width="${Math.max(bw-1,.5)}" height="${hi}" fill="#e53935"/>`}).join('');
+ o.innerHTML=`<div class="card"><div class="mut">${k==='a'?'Платёж в месяц':'Первый платёж'}</div><div class="big">${fmt(rows[0].pay)}</div>`+
+  (k==='d'?row('Последний платёж',fmt(rows[m-1].pay)):'')+row('Всего выплатите',fmt(tot))+row('Переплата','+'+fmt(ti)+' ('+Math.round(ti/P*100)+'%)','style="color:var(--red)"')+
+  `<svg viewBox="0 0 ${W} ${H}">${bars}</svg><div class="mut">🔵 основной долг  🔴 проценты</div></div>`+
+  `<div class="card warn"><b>😳 Первые ${n3} мес</b>`+row('Выплат',fmt(p3))+row('Из них проценты',fmt(i3)+' ('+Math.round(i3/p3*100)+'%)','style="color:var(--red)"')+
+  (m>12&&ti>0?row('Проценты за 1-й год',fmt(i12)+' ('+Math.round(i12/ti*100)+'% всех)'):'')+`</div>`}
+
+document.querySelectorAll('#p1 input,#p1 select').forEach(e=>e.oninput=dep);
+document.querySelectorAll('#p2 input,#p2 select').forEach(e=>e.oninput=loan);
+function tab(n){$('p1').classList.toggle('hide',n!==1);$('p2').classList.toggle('hide',n!==2);$('t1').classList.toggle('on',n===1);$('t2').classList.toggle('on',n===2)}
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+dep();loan();
+</script></body></html>

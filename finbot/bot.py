@@ -9,7 +9,7 @@ import os
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -21,10 +21,13 @@ log = logging.getLogger("finbot")
 TZ = ZoneInfo(os.getenv("TZ", "Europe/Warsaw"))
 BASE = os.getenv("BASE_CURRENCY", "PLN").upper()
 REMIND_DAYS = int(os.getenv("REMIND_DAYS_BEFORE", "1"))
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 rates = Rates()
 HTML = ParseMode.HTML
 
 HELP = """👋 Я превращаю мелкий шрифт в понятные цифры.
+
+<b>📱 Калькулятор с ползунками</b>: /app
 
 <b>💰 Вклады</b>
 <code>/deposit 500к 10% на год, капитализация каждый месяц</code>
@@ -74,6 +77,14 @@ async def safely(update: Update, fn, *a) -> None:
 
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP, parse_mode=HTML)
+
+
+async def app_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not WEBAPP_URL:
+        await update.message.reply_text("Мини-приложение ещё не подключено (не задан WEBAPP_URL).")
+        return
+    kb = InlineKeyboardMarkup([[InlineKeyboardButton("📱 Открыть калькулятор", web_app=WebAppInfo(WEBAPP_URL))]])
+    await update.message.reply_text("Вклады и кредиты в удобной форме 👇", reply_markup=kb)
 
 
 async def deposit_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -209,7 +220,7 @@ async def on_error(update: object, ctx: ContextTypes.DEFAULT_TYPE):
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     app = Application.builder().token(os.environ["BOT_TOKEN"]).build()
-    for name, fn in [("start", start), ("help", start), ("deposit", deposit_cmd), ("compare", compare_cmd),
+    for name, fn in [("start", start), ("help", start), ("app", app_cmd), ("deposit", deposit_cmd), ("compare", compare_cmd),
                      ("loan", loan_cmd), ("convert", convert_cmd), ("sub_add", sub_add),
                      ("subs", subs_cmd), ("sub_del", sub_del)]:
         app.add_handler(CommandHandler(name, fn))
